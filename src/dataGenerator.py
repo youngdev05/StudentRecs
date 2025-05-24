@@ -1,5 +1,6 @@
 import pandas as pd
 import random
+import os
 
 # Настройки
 num_students = 30
@@ -40,9 +41,23 @@ for student_id in students['student_id']:
 
 enrollments = pd.DataFrame(enrollments, columns=['student_id', 'course_id', 'grade', 'semester'])
 
-# Сохранение в CSV
-students.to_csv('students.csv', index=False)
-courses.to_csv('courses.csv', index=False)
-enrollments.to_csv('enrollments.csv', index=False)
+# Сохранение базовых CSV
+os.makedirs("data", exist_ok=True)
+students.to_csv('data/students.csv', index=False)
+courses.to_csv('data/courses.csv', index=False)
+enrollments.to_csv('data/enrollments.csv', index=False)
 
-print("✅ Данные успешно сгенерированы!")
+# Генерация student_course_success.csv
+merged = enrollments.merge(students, on='student_id', how='left')
+merged = merged.merge(courses, on='course_id', how='left')
+
+# Успешность: grade >= 3.0 → success = 1
+merged['success'] = merged['grade'].apply(lambda x: 1 if x >= 3.0 else 0)
+
+# Только нужные столбцы
+success_df = merged[['student_id', 'course_id', 'success']]
+
+# Сохранение
+success_df.to_csv('data/student_course_success.csv', index=False)
+
+print("✅ Все данные успешно сгенерированы!")
