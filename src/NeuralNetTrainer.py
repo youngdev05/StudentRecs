@@ -1,114 +1,80 @@
-import pandas as pd
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from torch.utils.data import DataLoader, TensorDataset
 import joblib
 
-# 🔧 Гиперпараметры
-EPOCHS = 300
-BATCH_SIZE = 16
-LEARNING_RATE = 0.001
-
-# 🧠 Модель
 class Net(nn.Module):
-    def __init__(self, input_dim):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, 64),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1),
-            nn.Sigmoid()
-        )
+    def __init__(self, input_size):
+        super(Net, self).__init__()
+        self.fc1 = nn.Linear(input_size, 128)
+        self.bn1 = nn.BatchNorm1d(128)
+        self.dropout1 = nn.Dropout(0.3)
+
+        self.fc2 = nn.Linear(128, 64)
+        self.bn2 = nn.BatchNorm1d(64)
+        self.dropout2 = nn.Dropout(0.3)
+
+        self.fc3 = nn.Linear(64, 32)
+        self.bn3 = nn.BatchNorm1d(32)
+        self.dropout3 = nn.Dropout(0.3)
+
+        self.out = nn.Linear(32, 1)
 
     def forward(self, x):
-        return self.net(x)
+        x = self.dropout1(torch.relu(self.bn1(self.fc1(x))))
+        x = self.dropout2(torch.relu(self.bn2(self.fc2(x))))
+        x = self.dropout3(torch.relu(self.bn3(self.fc3(x))))
+        x = torch.sigmoid(self.out(x))
+        return x
 
-# 🔄 Загрузка и подготовка данных
-def load_and_prepare_data():
+def train():
     students = pd.read_csv('C:/Users/dimas/CsvGenerator/data/students.csv')
     courses = pd.read_csv('C:/Users/dimas/CsvGenerator/data/courses.csv')
-    enrollments = pd.read_csv('C:/Users/dimas/CsvGenerator/data/enrollments.csv')
+    data = pd.read_csv('C:/Users/dimas/CsvGenerator/data/student_course_success.csv')
 
-    df = pd.merge(enrollments, students, on='student_id')
+    df = pd.merge(data, students, on='student_id')
     df = pd.merge(df, courses, on='course_id')
-
-    df['high_grade'] = (df['grade'] >= 4).astype(int)
 
     df = pd.get_dummies(df, columns=['major', 'category', 'difficulty_level'])
 
-    X = df.drop(columns=['high_grade', 'grade', 'student_id', 'course_id', 'name', 'semester'])
-    y = df['high_grade']
-
-    return X, y
-
-# 🧠 Обучение модели
-def train_model(X, y):
-    X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=0.2, random_state=42)
+    feature_names = [col for col in df.columns if col not in ['student_id', 'course_id', 'success']]
+    X = df[feature_names]
+    y = df['success']
 
     scaler = StandardScaler()
-    X_train = scaler.fit_transform(X_train)
-    X_val = scaler.transform(X_val)
+    X_scaled = scaler.fit_transform(X)
 
-    train_dataset = TensorDataset(torch.tensor(X_train, dtype=torch.float32),
-                                  torch.tensor(y_train.values, dtype=torch.float32).unsqueeze(1))
-    val_dataset = TensorDataset(torch.tensor(X_val, dtype=torch.float32),
-                                torch.tensor(y_val.values, dtype=torch.float32).unsqueeze(1))
+    X_train, X_val, y_train, y_val = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
 
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
+    y_train_tensor = torch.tensor(y_train.values, dtype=torch.float32).view(-1, 1)
 
-    model = Net(input_dim=X.shape[1])
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    model = Net(X_train.shape[1])
     criterion = nn.BCELoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-    for epoch in range(EPOCHS):
+    for epoch in range(100):
         model.train()
-        epoch_loss = 0
-
-        for xb, yb in train_loader:
-            optimizer.zero_grad()
-            preds = model(xb)
-            loss = criterion(preds, yb)
-            loss.backward()
-            optimizer.step()
-            epoch_loss += loss.item()
-
-        # Оцениваем на валидации
-        model.eval()
-        with torch.no_grad():
-            val_preds = model(torch.tensor(X_val, dtype=torch.float32))
-            val_loss = criterion(val_preds, torch.tensor(y_val.values, dtype=torch.float32).unsqueeze(1))
-            val_acc = ((val_preds > 0.5).float() == torch.tensor(y_val.values).unsqueeze(1)).float().mean()
+        optimizer.zero_grad()
+        outputs = model(X_train_tensor)
+        loss = criterion(outputs, y_train_tensor)
+        loss.backward()
+        optimizer.step()
 
         if epoch % 10 == 0:
-            print(f"Epoch {epoch} | Train Loss: {epoch_loss/len(train_loader):.4f} | "
-                  f"Val Loss: {val_loss.item():.4f} | Val Acc: {val_acc.item():.2f}")
+            print(f"Epoch {epoch} | Loss: {loss.item():.4f}")
 
-    return model, scaler, X.columns.tolist()
+    print("\n✅ Нейросеть обучена и сохранена!")
 
-# 💾 Сохраняем модель
-def save_model(model, scaler, feature_names, filename='course_recommender_nn.pt'):
     torch.save({
         'model_state_dict': model.state_dict(),
-        'feature_names': feature_names,
-        'scaler': scaler
-    }, filename)
-    print(f"✅ Нейросеть обучена и сохранена в '{filename}'")
+        'scaler': scaler,
+        'feature_names': feature_names
+    }, 'C:/Users/dimas/CsvGenerator/src/course_recommender_nn.pt')
 
-# 🚀 Точка входа
 if __name__ == '__main__':
-    print("🔄 Загружаем и подготавливаем данные...")
-    X, y = load_and_prepare_data()
-
-    print("🧠 Начинаем обучение нейросети...")
-    model, scaler, feature_names = train_model(X, y)
-
-    print("💾 Сохраняем модель...")
-    save_model(model, scaler, feature_names)
+    train()
