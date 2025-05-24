@@ -6,12 +6,10 @@ from sklearn.preprocessing import StandardScaler
 from NeuralNetTrainer import Net
 import joblib
 
-torch.serialization.add_safe_globals({
-    'sklearn.preprocessing._data.StandardScaler': StandardScaler
-})
+torch.serialization.add_safe_globals([StandardScaler])
 
 def load_model(filename='C:/Users/dimas/CsvGenerator/src/course_recommender_nn.pt'):
-    checkpoint = torch.load(filename)
+    checkpoint = torch.load(filename, weights_only=False)  # <-- ВАЖНО!
     model = Net(len(checkpoint['feature_names']))
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
