@@ -1,0 +1,13 @@
+course_id,name,category,difficulty_level,credits
+101,Course 1,Math,Medium,6
+102,Course 2,Physics,Hard,6
+103,Course 3,Economics,Medium,4
+104,Course 4,Math,Hard,6
+105,Course 5,History,Hard,6
+106,Course 6,Philosophy,Easy,4
+107,Course 7,Economics,Hard,6
+108,Course 8,Economics,Medium,4
+109,Course 9,Economics,Hard,4
+110,Course 10,Computer Science,Easy,6
+111,Course 11,Physics,Medium,4
+112,Course 12,History,Easy,4
