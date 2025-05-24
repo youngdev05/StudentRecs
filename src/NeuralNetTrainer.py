@@ -41,7 +41,11 @@ def train():
 
     df = pd.get_dummies(df, columns=['major', 'category', 'difficulty_level'])
 
-    feature_names = [col for col in df.columns if col not in ['student_id', 'course_id', 'success']]
+    # Исключаем все ненужные (нечисловые) столбцы
+    feature_names = [col for col in df.columns if col not in [
+        'student_id', 'course_id', 'success', 'name', 'semester'
+    ]]
+
     X = df[feature_names]
     y = df['success']
 
@@ -57,7 +61,7 @@ def train():
     criterion = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-    for epoch in range(100):
+    for epoch in range(200):
         model.train()
         optimizer.zero_grad()
         outputs = model(X_train_tensor)
