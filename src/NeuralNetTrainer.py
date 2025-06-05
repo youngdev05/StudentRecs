@@ -31,11 +31,30 @@ class Net(nn.Module):
         return torch.sigmoid(self.out(x))
 
 def train():
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    import pandas as pd
+    import numpy as np
+    from sklearn.model_selection import train_test_split
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.metrics import classification_report, confusion_matrix
+
     # Загрузка обучающего датасета
-    df = pd.read_csv('data/training_data.csv')
+    df = pd.read_csv('C:/Users/dimas/CsvGenerator/data/training_data.csv')
 
     # One-hot для категориальных
     df = pd.get_dummies(df, columns=['major', 'course_category', 'course_difficulty'])
+
+    # Удаляем промежуточный класс
+    df = df[df['success'] != 0.5]
+
+    # Балансировка классов
+    class_0 = df[df['success'] == 0]
+    class_1 = df[df['success'] == 1]
+    min_len = min(len(class_0), len(class_1))
+    df = pd.concat([class_0.sample(min_len, random_state=42),
+                    class_1.sample(min_len, random_state=42)])
 
     # Отделяем признаки и целевую переменную
     feature_names = [col for col in df.columns if col not in ['student_id', 'course_id', 'success']]
@@ -69,14 +88,29 @@ def train():
         if epoch % 10 == 0:
             print(f"Epoch {epoch} | Loss: {loss.item():.4f}")
 
-    print("\n✅ Нейросеть обучена и сохранена!")
+    print("\n✅ Нейросеть обучена!")
+
+    # Валидация
+    model.eval()
+    X_val_tensor = torch.tensor(X_val, dtype=torch.float32)
+    with torch.no_grad():
+        predictions = model(X_val_tensor).numpy()
+        predicted_labels = (predictions > 0.5).astype(int)
+
+    print("\n📊 Classification Report:")
+    print(confusion_matrix(y_val, predicted_labels))
+    print(classification_report(y_val, predicted_labels, digits=3))
 
     # Сохранение модели и скейлера
     torch.save({
         'model_state_dict': model.state_dict(),
         'scaler': scaler,
         'feature_names': feature_names
-    }, 'src/course_recommender_nn.pt')
+    }, 'C:/Users/dimas/CsvGenerator/src/course_recommender_nn.pt')
+
+    print("✅ Модель сохранена!")
+
+
 
 if __name__ == '__main__':
     train()

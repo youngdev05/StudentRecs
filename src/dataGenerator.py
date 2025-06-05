@@ -58,45 +58,53 @@ courses = pd.DataFrame({
 })
 courses['difficulty_level'] = courses['category'].map(lambda x: categories[x]['difficulty'])
 courses['credits'] = courses['category'].map(lambda x: categories[x]['credits'])
+# Добавляем индивидуальную сложность
+courses['individual_difficulty'] = np.random.uniform(-0.15, 0.15, size=len(courses))
 
 
 # Функция генерации оценок с учетом факторов
 def generate_grade(student, course):
-    # Базовые факторы
-    difficulty_weight = {'Easy': 0, 'Medium': -0.45, 'Hard': -0.8}  # Усилили penalty за сложность
-    major_affinity = {
-        'CS': {'Computer Science': 0.2, 'Math': 0.15, 'Economics': 0.1},
-        'Math': {'Math': 0.25, 'Physics': 0.2, 'Computer Science': 0.15},
-        'History': {'History': 0.3, 'Philosophy': 0.25},
-        'Physics': {'Physics': 0.3, 'Math': 0.2}
-    }  # Ослабили влияние major_affinity
-
-    # Новый фактор: мотивация
-    motivation = student.get('motivation', 0.5)
-    motivation_effect = (motivation - 0.5) * 0.3  # от -0.15 до +0.15 (ослабили)
-
-    # Расчет "идеальной" оценки
-    base = student['gpa'] / 5.0
-    diff = difficulty_weight[course['difficulty_level']]
-    affinity = major_affinity[student['major']].get(course['category'], 0)
-    year_bonus = student['year_of_study'] * 0.05
-
-    # Добавим шум: иногда студенту просто не везёт или наоборот
-    noise = np.random.normal(0, 0.18)
-    # Для лёгких курсов увеличим шанс плохой оценки
-    if course['difficulty_level'] == 'Easy' and random.random() < 0.18:
-        noise -= random.uniform(0.2, 0.5)
-    # Для сложных курсов иногда бывает удача
-    if course['difficulty_level'] == 'Hard' and random.random() < 0.12:
-        noise += random.uniform(0.2, 0.5)
-
-    score = base + diff + affinity + year_bonus + motivation_effect + noise
-    # Ограничение: если GPA < 2.5 и курс сложный, score не может быть выше 0.6
-    if student['gpa'] < 2.5 and course['difficulty_level'] == 'Hard':
-        score = min(score, 0.6)
+    # Жёсткие правила для генерации успеха
+    if course['difficulty_level'] == 'Hard' and student['gpa'] < 2.7:
+        score = 0.3 + np.random.normal(0, 0.05)  # всегда низко
+    elif course['difficulty_level'] == 'Easy' and student['gpa'] > 4.0:
+        score = 0.9 + np.random.normal(0, 0.05)  # всегда высоко
+    else:
+        difficulty_weight = {'Easy': 0, 'Medium': -0.25, 'Hard': -0.5}
+        major_affinity = {
+            'CS': {'Computer Science': 0.2, 'Math': 0.1, 'Economics': 0.05},
+            'Math': {'Math': 0.25, 'Physics': 0.15, 'Computer Science': 0.1},
+            'History': {'History': 0.3, 'Philosophy': 0.2},
+            'Physics': {'Physics': 0.3, 'Math': 0.15}
+        }
+        motivation = student.get('motivation', 0.5)
+        motivation_effect = (motivation - 0.5) * 0.15
+        gpa_norm = (student['gpa'] - 2.0) / 3.0
+        gpa_norm = max(0, min(1, gpa_norm))
+        diff = difficulty_weight[course['difficulty_level']]
+        affinity = major_affinity[student['major']].get(course['category'], 0)
+        year_bonus = student['year_of_study'] * 0.02
+        noise = np.random.normal(0, 0.10)
+        individual_diff = course.get('individual_difficulty', 0)
+        if course['difficulty_level'] == 'Easy':
+            score = 0.55 * gpa_norm + 0.15 + affinity + year_bonus + motivation_effect + noise + individual_diff
+        elif course['difficulty_level'] == 'Medium':
+            score = 0.45 * gpa_norm + diff + affinity + year_bonus + motivation_effect + noise + individual_diff
+        else:  # Hard
+            score = 0.35 * gpa_norm + diff + affinity + year_bonus + motivation_effect + noise + individual_diff
+        if student['gpa'] < 2.5:
+            if course['difficulty_level'] == 'Hard':
+                score = min(score, 0.45)
+            elif course['difficulty_level'] == 'Medium':
+                score = min(score, 0.6)
+        if student['gpa'] > 4.0:
+            if course['difficulty_level'] == 'Easy':
+                score = max(score, 0.8)
+            elif course['difficulty_level'] == 'Medium':
+                score = max(score, 0.7)
+            elif course['difficulty_level'] == 'Hard':
+                score = max(score, 0.6)
     score = max(0, min(1, score))
-
-    # Преобразуем в 5-балльную шкалу
     if score < 0.6:
         return random.choice([2, 2.5, 3])
     elif score < 0.75:
@@ -152,9 +160,14 @@ merged = merged.merge(courses, on='course_id', how='left')
 # Успешность теперь не бинарная, а с градациями
 def calculate_success(row):
     grade = row['grade']
-    diff = {'Easy': 0, 'Medium': -0.5, 'Hard': -1}[row['difficulty_level']]
-    expected = (row['gpa'] / 5 * 2) + 2 + diff
-    return 1 if grade >= expected else (0.5 if grade >= expected - 1 else 0)
+    # Жёсткое правило: слабый студент не может быть успешен на сложном курсе
+    if row['difficulty_level'] == 'Hard' and row['gpa'] < 2.7:
+        return 0
+    # Сильный студент на лёгком курсе — успех только если оценка высокая
+    if row['difficulty_level'] == 'Easy' and row['gpa'] > 4.0:
+        return 1 if grade >= 4 else 0
+    # Для остальных успех только если grade >= 3.5
+    return 1 if grade >= 3.5 else 0
 
 
 merged['success'] = merged.apply(calculate_success, axis=1)

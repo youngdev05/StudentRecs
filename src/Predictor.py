@@ -34,10 +34,11 @@ class CourseRecommender:
         if not all([self.model, self.scaler, self.feature_names]):
             raise RuntimeError("Модель не загружена")
 
-        # Подготовка базового шаблона данных студента (все признаки = 0)
+        print("\n--- DEBUG: FEATURE NAMES ---")
+        print(self.feature_names)
+
         base_input = pd.DataFrame([np.zeros(len(self.feature_names))], columns=self.feature_names)
 
-        # Заполнение данных о студенте
         for key, value in student_data.items():
             if key in base_input.columns:
                 base_input.at[0, key] = value
@@ -45,6 +46,7 @@ class CourseRecommender:
         recommendations = []
         for _, course in courses_df.iterrows():
             input_data = base_input.copy()
+
             cat_col = f'course_category_{course["category"]}'
             diff_col = f'course_difficulty_{course["difficulty_level"]}'
             if cat_col in input_data.columns:
@@ -54,11 +56,18 @@ class CourseRecommender:
             if 'credits' in input_data.columns:
                 input_data.at[0, 'credits'] = course['credits']
 
+            # Показываем входные данные до нормализации
+            print(f"\n[{student_data['major']} | {course['name']}] RAW INPUT:")
+            print(input_data)
+
             input_scaled = self.scaler.transform(input_data)
             input_tensor = torch.tensor(input_scaled, dtype=torch.float32)
 
             with torch.no_grad():
                 prob = self.model(input_tensor).item()
+
+            # Показываем вероятность до калибровки
+            print(f"[{student_data['major']} | {course['name']}] Prediction (before scale): {prob:.4f}")
 
             final_score = min(0.95, max(0.3, prob * 0.9))
 
@@ -84,12 +93,12 @@ class CourseRecommender:
 
 if __name__ == '__main__':
     try:
-        recommender = CourseRecommender('src/course_recommender_nn.pt')
-        courses_df = pd.read_csv('data/courses.csv')
+        recommender = CourseRecommender('C:/Users/dimas/CsvGenerator/src/course_recommender_nn.pt')
+        courses_df = pd.read_csv('C:/Users/dimas/CsvGenerator/data/courses.csv')
 
         test_students = [
             {
-                'gpa': 3.0,
+                'gpa': 1.5,
                 'year_of_study': 3,
                 'major_Math': 1,
                 'major_CS': 0,
