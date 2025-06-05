@@ -35,11 +35,15 @@ def generate_students(n):
 
         gpa = max(2.0, min(5.0, round(np.random.normal(base_gpa, 0.5), 2)))
 
+        # Новый признак: мотивация (от 0 до 1)
+        motivation = round(np.clip(np.random.beta(2, 2), 0, 1), 2)
+
         data.append({
             'student_id': i,
             'major': major,
             'year_of_study': year,
-            'gpa': gpa
+            'gpa': gpa,
+            'motivation': motivation
         })
     return pd.DataFrame(data)
 
@@ -59,13 +63,17 @@ courses['credits'] = courses['category'].map(lambda x: categories[x]['credits'])
 # Функция генерации оценок с учетом факторов
 def generate_grade(student, course):
     # Базовые факторы
-    difficulty_weight = {'Easy': 0, 'Medium': -0.3, 'Hard': -0.6}
+    difficulty_weight = {'Easy': 0, 'Medium': -0.45, 'Hard': -0.8}  # Усилили penalty за сложность
     major_affinity = {
-        'CS': {'Computer Science': 0.4, 'Math': 0.3, 'Economics': 0.2},
-        'Math': {'Math': 0.5, 'Physics': 0.4, 'Computer Science': 0.3},
-        'History': {'History': 0.6, 'Philosophy': 0.5},
-        'Physics': {'Physics': 0.6, 'Math': 0.4}
-    }
+        'CS': {'Computer Science': 0.2, 'Math': 0.15, 'Economics': 0.1},
+        'Math': {'Math': 0.25, 'Physics': 0.2, 'Computer Science': 0.15},
+        'History': {'History': 0.3, 'Philosophy': 0.25},
+        'Physics': {'Physics': 0.3, 'Math': 0.2}
+    }  # Ослабили влияние major_affinity
+
+    # Новый фактор: мотивация
+    motivation = student.get('motivation', 0.5)
+    motivation_effect = (motivation - 0.5) * 0.3  # от -0.15 до +0.15 (ослабили)
 
     # Расчет "идеальной" оценки
     base = student['gpa'] / 5.0
@@ -73,8 +81,19 @@ def generate_grade(student, course):
     affinity = major_affinity[student['major']].get(course['category'], 0)
     year_bonus = student['year_of_study'] * 0.05
 
-    # Итоговый score
-    score = base + diff + affinity + year_bonus + random.uniform(-0.2, 0.2)
+    # Добавим шум: иногда студенту просто не везёт или наоборот
+    noise = np.random.normal(0, 0.18)
+    # Для лёгких курсов увеличим шанс плохой оценки
+    if course['difficulty_level'] == 'Easy' and random.random() < 0.18:
+        noise -= random.uniform(0.2, 0.5)
+    # Для сложных курсов иногда бывает удача
+    if course['difficulty_level'] == 'Hard' and random.random() < 0.12:
+        noise += random.uniform(0.2, 0.5)
+
+    score = base + diff + affinity + year_bonus + motivation_effect + noise
+    # Ограничение: если GPA < 2.5 и курс сложный, score не может быть выше 0.6
+    if student['gpa'] < 2.5 and course['difficulty_level'] == 'Hard':
+        score = min(score, 0.6)
     score = max(0, min(1, score))
 
     # Преобразуем в 5-балльную шкалу
@@ -146,7 +165,7 @@ success_df.to_csv('data/student_course_success.csv', index=False)
 
 # 🔧 Формируем обучающую выборку X с нужными фичами
 feature_df = merged[[
-    'student_id', 'course_id', 'major', 'year_of_study', 'gpa',
+    'student_id', 'course_id', 'major', 'year_of_study', 'gpa', 'motivation',
     'category', 'difficulty_level', 'credits', 'success'
 ]]
 feature_df.rename(columns={
