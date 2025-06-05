@@ -1,18 +1,21 @@
 import torch
 import pandas as pd
-from pathlib import Path
 import logging
+import numpy as np
 from sklearn.preprocessing import StandardScaler
-
-# Настройка логирования
 from src.NeuralNetTrainer import Net
 
-# Разрешаем загрузку StandardScaler для безопасного режима PyTorch
-torch.serialization.add_safe_globals([StandardScaler])
+# Разрешаем загрузку всех необходимых компонентов
+torch.serialization.add_safe_globals([
+    StandardScaler,
+    np._core.multiarray._reconstruct,
+    np.ndarray,
+    np.dtype,
+    np.frombuffer
+])
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 class CourseRecommender:
     def __init__(self, model_path: str = None):
@@ -26,8 +29,8 @@ class CourseRecommender:
     def load_model(self, model_path: str):
         """Загрузка обученной модели и scaler'а"""
         try:
-            # Загрузка с weights_only=True (безопасный режим)
-            checkpoint = torch.load(model_path, weights_only=True)
+            # Временное решение - отключаем weights_only для совместимости
+            checkpoint = torch.load(model_path, weights_only=False)
             self.model = Net(len(checkpoint['feature_names']))
             self.model.load_state_dict(checkpoint['model_state_dict'])
             self.model.eval()
@@ -37,6 +40,7 @@ class CourseRecommender:
         except Exception as e:
             logger.error(f"Ошибка при загрузке модели: {e}")
             raise
+
 
     def prepare_student_data(self, student_data: dict) -> pd.DataFrame:
         """Подготовка данных студента для модели"""
@@ -96,11 +100,11 @@ if __name__ == '__main__':
 
         # Пример данных студента
         student_data = {
-            'gpa': 4.2,
-            'year_of_study': 2,
-            'major_CS': 1,
+            'gpa': 3.0,  # Попробуйте разные значения GPA
+            'year_of_study': 3,  # Измените год обучения
+            'major_CS': 0,  # Попробуйте другие специальности
+            'major_Math': 1,
             'major_History': 0,
-            'major_Math': 0,
             'major_Physics': 0
         }
 
@@ -112,7 +116,7 @@ if __name__ == '__main__':
 
         # Вывод результатов
         print("\n🎓 Рекомендованные курсы:")
-        for course in recommendations[:5]:  # Топ-5 рекомендаций
+        for course in recommendations[:5]:
             print(
                 f"{course['course_name']} ({course['category']}) - Вероятность успеха: {course['success_probability']:.2f}")
 
