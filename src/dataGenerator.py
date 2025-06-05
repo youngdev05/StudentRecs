@@ -144,6 +144,21 @@ success_df = merged[['student_id', 'course_id', 'success']]
 # Сохранение
 success_df.to_csv('data/student_course_success.csv', index=False)
 
+# 🔧 Формируем обучающую выборку X с нужными фичами
+feature_df = merged[[
+    'student_id', 'course_id', 'major', 'year_of_study', 'gpa',
+    'category', 'difficulty_level', 'credits', 'success'
+]]
+feature_df.rename(columns={
+    'category': 'course_category',
+    'difficulty_level': 'course_difficulty',
+    'credits': 'course_credits'
+}, inplace=True)
+
+feature_df.to_csv('data/training_data.csv', index=False)
+print("✅ Обучающая выборка training_data.csv сохранена.")
+
+
 print("✅ Все данные успешно сгенерированы!")
 print(f"Всего студентов: {num_students}")
 print(f"Всего курсов: {num_courses}")

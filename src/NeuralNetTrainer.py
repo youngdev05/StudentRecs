@@ -28,35 +28,32 @@ class Net(nn.Module):
         x = self.dropout1(torch.relu(self.bn1(self.fc1(x))))
         x = self.dropout2(torch.relu(self.bn2(self.fc2(x))))
         x = self.dropout3(torch.relu(self.bn3(self.fc3(x))))
-        x = torch.sigmoid(self.out(x))
-        return x
+        return torch.sigmoid(self.out(x))
 
 def train():
-    students = pd.read_csv('C:/Users/dimas/CsvGenerator/data/students.csv')
-    courses = pd.read_csv('C:/Users/dimas/CsvGenerator/data/courses.csv')
-    data = pd.read_csv('C:/Users/dimas/CsvGenerator/data/student_course_success.csv')
+    # Загрузка обучающего датасета
+    df = pd.read_csv('data/training_data.csv')
 
-    df = pd.merge(data, students, on='student_id')
-    df = pd.merge(df, courses, on='course_id')
+    # One-hot для категориальных
+    df = pd.get_dummies(df, columns=['major', 'course_category', 'course_difficulty'])
 
-    df = pd.get_dummies(df, columns=['major', 'category', 'difficulty_level'])
-
-    # Исключаем все ненужные (нечисловые) столбцы
-    feature_names = [col for col in df.columns if col not in [
-        'student_id', 'course_id', 'success', 'name', 'semester'
-    ]]
-
+    # Отделяем признаки и целевую переменную
+    feature_names = [col for col in df.columns if col not in ['student_id', 'course_id', 'success']]
     X = df[feature_names]
     y = df['success']
 
+    # Масштабирование
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
+    # Разделение на тренировочную и валидационную выборки
     X_train, X_val, y_train, y_val = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
 
+    # Перевод в тензоры
     X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
     y_train_tensor = torch.tensor(y_train.values, dtype=torch.float32).view(-1, 1)
 
+    # Модель и обучение
     model = Net(X_train.shape[1])
     criterion = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
@@ -74,11 +71,12 @@ def train():
 
     print("\n✅ Нейросеть обучена и сохранена!")
 
+    # Сохранение модели и скейлера
     torch.save({
         'model_state_dict': model.state_dict(),
         'scaler': scaler,
         'feature_names': feature_names
-    }, 'C:/Users/dimas/CsvGenerator/src/course_recommender_nn.pt')
+    }, 'src/course_recommender_nn.pt')
 
 if __name__ == '__main__':
     train()
