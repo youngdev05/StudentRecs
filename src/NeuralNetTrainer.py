@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-import joblib
+torch.serialization.add_safe_globals([StandardScaler])
 
 class Net(nn.Module):
     def __init__(self, input_size):

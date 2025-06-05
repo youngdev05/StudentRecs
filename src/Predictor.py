@@ -1,73 +1,120 @@
 import torch
 import pandas as pd
-import numpy as np
+from pathlib import Path
+import logging
 from sklearn.preprocessing import StandardScaler
-from NeuralNetTrainer import Net
-import joblib
 
+# Настройка логирования
+from src.NeuralNetTrainer import Net
+
+# Разрешаем загрузку StandardScaler для безопасного режима PyTorch
 torch.serialization.add_safe_globals([StandardScaler])
 
-def load_model(filename='C:/Users/dimas/CsvGenerator/src/course_recommender_nn.pt'):
-    checkpoint = torch.load(filename, weights_only=False)  # <-- ВАЖНО!
-    model = Net(len(checkpoint['feature_names']))
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.eval()
-    scaler = checkpoint['scaler']
-    feature_names = checkpoint['feature_names']
-    return model, scaler, feature_names
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-def recommend_courses_for_student(student_data: dict, all_courses: pd.DataFrame, model, scaler, feature_names: list):
-    recommendations = []
 
-    for _, course in all_courses.iterrows():
-        # Копируем данные студента
-        input_data = student_data.copy()
+class CourseRecommender:
+    def __init__(self, model_path: str = None):
+        self.model = None
+        self.scaler = None
+        self.feature_names = None
 
-        # Добавляем признаки курса
-        input_data['category_' + course['category']] = 1
-        input_data['difficulty_level_' + course['difficulty_level']] = 1
-        input_data['credits'] = course['credits']
+        if model_path:
+            self.load_model(model_path)
 
-        # Приводим к правильному порядку признаков
-        input_df = pd.DataFrame([input_data], columns=feature_names).fillna(0)
+    def load_model(self, model_path: str):
+        """Загрузка обученной модели и scaler'а"""
+        try:
+            # Загрузка с weights_only=True (безопасный режим)
+            checkpoint = torch.load(model_path, weights_only=True)
+            self.model = Net(len(checkpoint['feature_names']))
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            self.model.eval()
+            self.scaler = checkpoint['scaler']
+            self.feature_names = checkpoint['feature_names']
+            logger.info("Модель успешно загружена")
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке модели: {e}")
+            raise
 
-        # Нормализуем с тем же scaler'ом, что использовался при обучении
-        input_scaled = scaler.transform(input_df)
+    def prepare_student_data(self, student_data: dict) -> pd.DataFrame:
+        """Подготовка данных студента для модели"""
+        # Проверка обязательных полей
+        required_fields = {'gpa', 'year_of_study'}
+        if not required_fields.issubset(student_data.keys()):
+            missing = required_fields - student_data.keys()
+            raise ValueError(f"Отсутствуют обязательные поля: {missing}")
 
-        input_tensor = torch.tensor(input_scaled, dtype=torch.float32)
+        # Добавление недостающих полей
+        for major in ['CS', 'Math', 'History', 'Physics']:
+            if f'major_{major}' not in student_data:
+                student_data[f'major_{major}'] = 0
 
-        # Предсказание
-        with torch.no_grad():
-            proba = model(input_tensor).item()
+        return pd.DataFrame([student_data], columns=self.feature_names).fillna(0)
 
-        if proba > 0.5:
-            recommendations.append((course['name'], proba))
+    def recommend_courses(self, student_data: dict, courses_df: pd.DataFrame, threshold: float = 0.5) -> list:
+        """Рекомендация курсов для студента"""
+        if not all([self.model, self.scaler, self.feature_names]):
+            raise RuntimeError("Модель не загружена")
 
-    # Сортируем по вероятности
-    recommendations.sort(key=lambda x: x[1], reverse=True)
+        recommendations = []
+        student_df = self.prepare_student_data(student_data)
 
-    print("\n🤖 Нейросеть рекомендует:")
-    for name, prob in recommendations:
-        print(f"{name} → Вероятность успеха: {prob:.2f}")
+        for _, course in courses_df.iterrows():
+            # Копируем и дополняем данные
+            input_data = student_df.copy()
+            input_data[f'category_{course["category"]}'] = 1
+            input_data[f'difficulty_level_{course["difficulty_level"]}'] = 1
+            input_data['credits'] = course['credits']
 
-# 🧪 Пример запуска
+            # Нормализация и предсказание
+            input_scaled = self.scaler.transform(input_data)
+            input_tensor = torch.tensor(input_scaled, dtype=torch.float32)
+
+            with torch.no_grad():
+                proba = self.model(input_tensor).item()
+
+            if proba >= threshold:
+                recommendations.append({
+                    'course_id': course['course_id'],
+                    'course_name': course['name'],
+                    'category': course['category'],
+                    'difficulty': course['difficulty_level'],
+                    'success_probability': proba
+                })
+
+        # Сортировка по вероятности успеха
+        return sorted(recommendations, key=lambda x: x['success_probability'], reverse=True)
+
+
+# Пример использования
 if __name__ == '__main__':
-    # Загружаем модель и scaler
-    model, scaler, feature_names = load_model()
+    try:
+        # Инициализация рекомендателя
+        recommender = CourseRecommender('C:/Users/dimas/CsvGenerator/src/course_recommender_nn.pt')
 
-    # Пример данных студента (можно взять из students.csv)
-    student_example = {
-        'gpa': 4.2,
-        'year_of_study': 2,
-        'major_CS': 1,
-        'major_History': 0,
-        'major_Math': 0,
-        'major_Physics': 0,
-        # Остальное будет заполнено позже
-    }
+        # Пример данных студента
+        student_data = {
+            'gpa': 4.2,
+            'year_of_study': 2,
+            'major_CS': 1,
+            'major_History': 0,
+            'major_Math': 0,
+            'major_Physics': 0
+        }
 
-    # Загружаем курсы
-    courses = pd.read_csv('C:/Users/dimas/CsvGenerator/data/courses.csv')
+        # Загрузка данных о курсах
+        courses_df = pd.read_csv('C:/Users/dimas/CsvGenerator/data/courses.csv')
 
-    # Получаем рекомендации
-    recommend_courses_for_student(student_example, courses, model, scaler, feature_names)
+        # Получение рекомендаций
+        recommendations = recommender.recommend_courses(student_data, courses_df)
+
+        # Вывод результатов
+        print("\n🎓 Рекомендованные курсы:")
+        for course in recommendations[:5]:  # Топ-5 рекомендаций
+            print(
+                f"{course['course_name']} ({course['category']}) - Вероятность успеха: {course['success_probability']:.2f}")
+
+    except Exception as e:
+        logger.error(f"Ошибка: {e}")
