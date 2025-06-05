@@ -5,7 +5,6 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 from src.NeuralNetTrainer import Net
 
-# Разрешаем загрузку компонентов
 torch.serialization.add_safe_globals([
     StandardScaler,
     np._core.multiarray._reconstruct,
@@ -24,24 +23,32 @@ class CourseRecommender:
         self.scaler = None
         self.feature_names = None
 
-        # Коэффициенты калибровки
-        self.difficulty_weights = {
-            'Easy': 0.85,
-            'Medium': 0.75,
-            'Hard': 0.65
-        }
-        self.major_weights = {
-            'CS': {'Computer Science': 1.1, 'Math': 1.0, 'Economics': 0.9},
-            'Math': {'Math': 1.2, 'Physics': 1.1, 'Computer Science': 1.0},
-            'History': {'History': 1.3, 'Philosophy': 1.1},
-            'Physics': {'Physics': 1.2, 'Math': 1.1}
+        # Весовые коэффициенты для системы рекомендаций
+        self.weights = {
+            'difficulty': {
+                'Easy': 0.9,
+                'Medium': 0.7,
+                'Hard': 0.5
+            },
+            'major': {
+                'CS': {'Computer Science': 1.2, 'Math': 1.1, 'Economics': 0.9},
+                'Math': {'Math': 1.3, 'Physics': 1.2, 'Computer Science': 1.0},
+                'History': {'History': 1.4, 'Philosophy': 1.1},
+                'Physics': {'Physics': 1.3, 'Math': 1.2}
+            },
+            'year': {
+                1: {'Easy': 1.2, 'Medium': 0.8, 'Hard': 0.5},
+                2: {'Easy': 1.1, 'Medium': 1.0, 'Hard': 0.7},
+                3: {'Easy': 1.0, 'Medium': 1.1, 'Hard': 0.9},
+                4: {'Easy': 0.9, 'Medium': 1.2, 'Hard': 1.1}
+            },
+            'gpa': lambda gpa: min(1.5, 0.7 + gpa / 3.0)
         }
 
         if model_path:
             self.load_model(model_path)
 
     def load_model(self, model_path: str):
-        """Загрузка модели с дополнительной проверкой"""
         try:
             checkpoint = torch.load(model_path, weights_only=False)
             self.model = Net(len(checkpoint['feature_names']))
@@ -54,29 +61,31 @@ class CourseRecommender:
             logger.error(f"Ошибка при загрузке модели: {e}")
             raise
 
-    def calibrate_probability(self, raw_prob: float, student: dict, course: dict) -> float:
-        """Расширенная калибровка вероятности"""
-        # Базовое понижение уверенности
-        calibrated = 0.5 + (raw_prob - 0.5) * 0.6
+    def calculate_final_score(self, student: dict, course: dict, raw_prob: float) -> float:
+        """Комплексный расчет итогового балла курса для студента"""
+        # Получаем основную специальность студента
+        major = next(k.split('_')[1] for k, v in student.items()
+                     if k.startswith('major_') and v == 1)
 
-        # Учет сложности курса
-        calibrated *= self.difficulty_weights.get(course['difficulty_level'], 1.0)
+        # Базовый расчет с учетом сложности
+        base_score = raw_prob * self.weights['difficulty'].get(course['difficulty_level'], 1.0)
 
         # Учет специализации
-        student_major = next(k.split('_')[1] for k, v in student.items()
-                             if k.startswith('major_') and v == 1)
-        major_factor = self.major_weights.get(student_major, {}).get(course['category'], 1.0)
-        calibrated *= major_factor
+        major_factor = self.weights['major'].get(major, {}).get(course['category'], 1.0)
 
-        # Учет GPA (чем выше GPA, тем больше доверия)
-        gpa_factor = min(1.0, student['gpa'] / 4.0)
-        calibrated = calibrated * 0.8 + calibrated * gpa_factor * 0.2
+        # Учет года обучения
+        year_factor = self.weights['year'].get(student['year_of_study'], {}).get(course['difficulty_level'], 1.0)
 
-        # Гарантированные границы
-        return max(0.3, min(0.95, calibrated))
+        # Учет GPA
+        gpa_factor = self.weights['gpa'](student['gpa'])
+
+        # Итоговый балл
+        final_score = base_score * major_factor * year_factor * gpa_factor
+
+        # Гарантируем разумные границы
+        return max(0.3, min(0.97, final_score))
 
     def prepare_student_data(self, student_data: dict) -> pd.DataFrame:
-        """Подготовка данных студента"""
         required_fields = {'gpa', 'year_of_study'}
         if not required_fields.issubset(student_data.keys()):
             missing = required_fields - student_data.keys()
@@ -89,7 +98,7 @@ class CourseRecommender:
         return pd.DataFrame([student_data], columns=self.feature_names).fillna(0)
 
     def recommend_courses(self, student_data: dict, courses_df: pd.DataFrame,
-                          threshold: float = 0.5, top_n: int = 5) -> list:
+                          top_n: int = 5) -> list:
         """Улучшенная система рекомендаций"""
         if not all([self.model, self.scaler, self.feature_names]):
             raise RuntimeError("Модель не загружена")
@@ -98,67 +107,73 @@ class CourseRecommender:
         student_df = self.prepare_student_data(student_data)
 
         for _, course in courses_df.iterrows():
+            # Подготовка входных данных
             input_data = student_df.copy()
             input_data[f'category_{course["category"]}'] = 1
             input_data[f'difficulty_level_{course["difficulty_level"]}'] = 1
             input_data['credits'] = course['credits']
 
+            # Предсказание
             input_scaled = self.scaler.transform(input_data)
             input_tensor = torch.tensor(input_scaled, dtype=torch.float32)
 
             with torch.no_grad():
-                raw_proba = self.model(input_tensor).item()
+                raw_prob = self.model(input_tensor).item()
 
-            # Применяем расширенную калибровку
-            proba = self.calibrate_probability(raw_proba, student_data, course)
+            # Комплексный расчет
+            final_score = self.calculate_final_score(student_data, course, raw_prob)
 
             recommendations.append({
                 'course_id': course['course_id'],
                 'course_name': course['name'],
                 'category': course['category'],
                 'difficulty': course['difficulty_level'],
-                'raw_probability': raw_proba,
-                'calibrated_probability': proba,
-                'match_score': self.calculate_match_score(student_data, course)
+                'raw_probability': raw_prob,
+                'final_score': final_score,
+                'match_description': self.get_match_description(student_data, course)
             })
 
-        # Сортировка по комбинированному показателю
-        sorted_recs = sorted(recommendations,
-                             key=lambda x: (x['calibrated_probability'], x['match_score']),
-                             reverse=True)
+        # Сортировка и выбор топ-N
+        recommendations.sort(key=lambda x: x['final_score'], reverse=True)
+        return recommendations[:top_n]
 
-        # Фильтрация и ограничение количества
-        filtered = [r for r in sorted_recs if r['calibrated_probability'] >= threshold]
-        return filtered[:top_n]
+    def get_match_description(self, student: dict, course: dict) -> str:
+        """Генерирует текстовое описание соответствия"""
+        major = next(k.split('_')[1] for k, v in student.items()
+                     if k.startswith('major_') and v == 1)
 
-    def calculate_match_score(self, student: dict, course: dict) -> float:
-        """Дополнительная оценка соответствия курса студенту"""
-        score = 0.0
+        descriptions = {
+            'major': {
+                'CS': {
+                    'Computer Science': "Отлично подходит для CS-специалистов",
+                    'Math': "Математика важна для программирования",
+                    'Economics': "Экономика для IT-менеджеров"
+                },
+                'Math': {
+                    'Math': "Основная математическая подготовка",
+                    'Physics': "Физика для прикладной математики",
+                    'Computer Science': "Вычислительные методы"
+                }
+            },
+            'difficulty': {
+                'Easy': "Базовый уровень сложности",
+                'Medium': "Средний уровень сложности",
+                'Hard': "Продвинутый уровень сложности"
+            }
+        }
 
-        # Совпадение с основной специальностью
-        student_major = next(k.split('_')[1] for k, v in student.items()
-                             if k.startswith('major_') and v == 1)
+        major_desc = descriptions['major'].get(major, {}).get(course['category'],
+                                                              "Курс не относится к вашей основной специализации")
+        diff_desc = descriptions['difficulty'].get(course['difficulty_level'], "")
 
-        if student_major == 'CS' and course['category'] == 'Computer Science':
-            score += 0.3
-        elif student_major == 'Math' and course['category'] == 'Math':
-            score += 0.4
-        # ... другие правила соответствия
-
-        # Учет года обучения
-        year = student['year_of_study']
-        if year >= 3 and course['difficulty_level'] == 'Hard':
-            score += 0.2
-
-        return min(1.0, score)
+        return f"{major_desc}. {diff_desc}"
 
     def print_recommendations(self, recommendations: list):
-        """Улучшенный вывод с цветовой маркировкой"""
         if not recommendations:
-            print("\n🤷 Нет рекомендаций, соответствующих заданному порогу")
+            print("\n🤷 Нет подходящих рекомендаций")
             return
 
-        print("\n🎓 Рекомендованные курсы:")
+        print("\n🎓 Лучшие рекомендации:")
         for i, course in enumerate(recommendations, 1):
             diff_color = {
                 'Easy': '\033[92m',  # зеленый
@@ -166,19 +181,19 @@ class CourseRecommender:
                 'Hard': '\033[91m'  # красный
             }.get(course['difficulty'], '\033[0m')
 
-            prob = course['calibrated_probability']
-            if prob > 0.8:
-                prob_color = '\033[92m'
-            elif prob > 0.6:
-                prob_color = '\033[93m'
+            score = course['final_score']
+            if score > 0.8:
+                score_color = '\033[92m'
+            elif score > 0.6:
+                score_color = '\033[93m'
             else:
-                prob_color = '\033[91m'
+                score_color = '\033[91m'
 
-            print(f"{i}. {course['course_name']} ({course['category']})")
+            print(f"{i}. \033[1m{course['course_name']}\033[0m ({course['category']})")
             print(f"   {diff_color}Сложность: {course['difficulty']}\033[0m")
-            print(f"   {prob_color}Вероятность успеха: {prob:.2f}\033[0m")
-            print(f"   Совпадение: {course['match_score']:.2f}")
-            print("-" * 50)
+            print(f"   {score_color}Рекомендационный балл: {score:.2f}\033[0m")
+            print(f"   \033[94m{course['match_description']}\033[0m")
+            print("-" * 60)
 
 
 if __name__ == '__main__':
@@ -186,7 +201,6 @@ if __name__ == '__main__':
         recommender = CourseRecommender('C:/Users/dimas/CsvGenerator/src/course_recommender_nn.pt')
         courses_df = pd.read_csv('C:/Users/dimas/CsvGenerator/data/courses.csv')
 
-        # Тестовые студенты
         test_students = [
             {
                 'gpa': 3.0,
@@ -207,19 +221,14 @@ if __name__ == '__main__':
         ]
 
         for i, student in enumerate(test_students, 1):
-            print(f"\n{'=' * 60}")
-            print(f"📊 Тестирование студента #{i}:")
+            print(f"\n{'=' * 70}")
+            print(f"📋 Профиль студента #{i}:")
             print(
-                f"- Специальность: {next(k.split('_')[1] for k, v in student.items() if k.startswith('major_') and v == 1)}")
-            print(f"- GPA: {student['gpa']}")
-            print(f"- Год обучения: {student['year_of_study']}")
+                f"• Специальность: \033[1m{next(k.split('_')[1] for k, v in student.items() if k.startswith('major_') and v == 1)}\033[0m")
+            print(f"• GPA: \033[1m{student['gpa']}\033[0m")
+            print(f"• Год обучения: \033[1m{student['year_of_study']}\033[0m")
 
-            recommendations = recommender.recommend_courses(
-                student,
-                courses_df,
-                threshold=0.55,  # Повышенный порог
-                top_n=5
-            )
+            recommendations = recommender.recommend_courses(student, courses_df)
             recommender.print_recommendations(recommendations)
 
     except Exception as e:
