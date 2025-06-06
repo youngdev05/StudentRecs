@@ -1,13 +1,25 @@
-course_id,name,category,difficulty_level,credits
-101,Course 1,Philosophy,Hard,6
-102,Course 2,Economics,Hard,6
-103,Course 3,Computer Science,Hard,4
-104,Course 4,History,Easy,4
-105,Course 5,Philosophy,Medium,4
-106,Course 6,Philosophy,Hard,4
-107,Course 7,History,Easy,6
-108,Course 8,History,Medium,4
-109,Course 9,History,Hard,4
-110,Course 10,History,Easy,6
-111,Course 11,Physics,Medium,6
-112,Course 12,Economics,Easy,4
+course_id,name,category,difficulty_level,credits,individual_difficulty
+101,Course 1,Math,Hard,6,0.268193844527296
+102,Course 2,Computer Science,Medium,6,0.2916297071235491
+103,Course 3,Economics,Medium,4,0.02056919321179218
+104,Course 4,History,Easy,4,-0.067145391795701
+105,Course 5,History,Easy,4,-0.10615395611063241
+106,Course 6,History,Easy,4,0.18920228244649206
+107,Course 7,History,Easy,4,0.12156715530427059
+108,Course 8,Math,Hard,6,0.315172039347262
+109,Course 9,Philosophy,Easy,4,0.17918123292491261
+110,Course 10,History,Easy,4,0.12755417329559637
+111,Course 11,Computer Science,Medium,6,-0.3211330179068387
+112,Course 12,Math,Hard,6,0.1925728304449077
+113,Course 13,Computer Science,Medium,6,0.20073890055050514
+114,Course 14,Physics,Hard,6,-0.05342916352008725
+115,Course 15,History,Easy,4,-0.15170983604234922
+116,Course 16,Computer Science,Medium,6,-0.2476370460291012
+117,Course 17,Physics,Hard,6,-0.015195442246802582
+118,Course 18,Physics,Hard,6,0.34061781988823225
+119,Course 19,Physics,Hard,6,0.012586952253422878
+120,Course 20,Philosophy,Easy,4,-0.3201464120173962
+121,Course 21,History,Easy,4,-0.027885657826947186
+122,Course 22,History,Easy,4,-0.2700390283692997
+123,Course 23,Physics,Hard,6,-0.19127793914773228
+124,Course 24,Philosophy,Easy,4,-0.1605965100599403
