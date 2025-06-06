@@ -98,7 +98,7 @@ if __name__ == '__main__':
 
         test_students = [
             {
-                'gpa': 1.5,
+                'gpa': 50,  # 100-балльная система
                 'year_of_study': 3,
                 'major_Math': 1,
                 'major_CS': 0,
@@ -106,7 +106,7 @@ if __name__ == '__main__':
                 'major_Physics': 0
             },
             {
-                'gpa': 4.5,
+                'gpa': 95,  # 100-балльная система
                 'year_of_study': 4,
                 'major_CS': 1,
                 'major_Math': 0,

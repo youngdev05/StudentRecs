@@ -31,6 +31,8 @@ class Net(nn.Module):
         return torch.sigmoid(self.out(x))
 
 def train():
+    # ВНИМАНИЕ: gpa и grade теперь в 100-балльной системе (gpa: 40-100, grade: 0-100)
+    # Все пороги успеха и генерация данных должны соответствовать этой шкале
     import torch
     import torch.nn as nn
     import torch.optim as optim
