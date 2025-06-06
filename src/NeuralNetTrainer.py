@@ -46,9 +46,6 @@ def train():
     # One-hot для категориальных
     df = pd.get_dummies(df, columns=['major', 'course_category', 'course_difficulty'])
 
-    # Удаляем промежуточный класс
-    df = df[df['success'] != 0.5]
-
     # Балансировка классов
     class_0 = df[df['success'] == 0]
     class_1 = df[df['success'] == 1]

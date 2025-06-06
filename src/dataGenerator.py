@@ -27,17 +27,12 @@ def generate_students(n):
     for i in range(1, n + 1):
         major = random.choice(['CS', 'Math', 'History', 'Physics'])
         year = random.randint(1, 4)
-
-        # GPA зависит от специальности и года обучения
+        # GPA теперь в 100-балльной системе
         base_gpa = {
-                       'CS': 3.2, 'Math': 3.0, 'History': 3.5, 'Physics': 3.1
-                   }[major] + (year * 0.1)
-
-        gpa = max(2.0, min(5.0, round(np.random.normal(base_gpa, 0.5), 2)))
-
-        # Новый признак: мотивация (от 0 до 1)
+            'CS': 70, 'Math': 65, 'History': 80, 'Physics': 68
+        }[major] + (year * 3)
+        gpa = int(np.clip(np.random.normal(base_gpa, 10), 40, 100))
         motivation = round(np.clip(np.random.beta(2, 2), 0, 1), 2)
-
         data.append({
             'student_id': i,
             'major': major,
@@ -59,16 +54,15 @@ courses = pd.DataFrame({
 courses['difficulty_level'] = courses['category'].map(lambda x: categories[x]['difficulty'])
 courses['credits'] = courses['category'].map(lambda x: categories[x]['credits'])
 # Добавляем индивидуальную сложность
-courses['individual_difficulty'] = np.random.uniform(-0.15, 0.15, size=len(courses))
+courses['individual_difficulty'] = np.random.uniform(-0.35, 0.35, size=len(courses))
 
 
 # Функция генерации оценок с учетом факторов
 def generate_grade(student, course):
-    # Жёсткие правила для генерации успеха
-    if course['difficulty_level'] == 'Hard' and student['gpa'] < 2.7:
-        score = 0.3 + np.random.normal(0, 0.05)  # всегда низко
-    elif course['difficulty_level'] == 'Easy' and student['gpa'] > 4.0:
-        score = 0.9 + np.random.normal(0, 0.05)  # всегда высоко
+    if course['difficulty_level'] == 'Hard' and student['gpa'] < 55:
+        score = 0.3 + np.random.normal(0, 0.05)
+    elif course['difficulty_level'] == 'Easy' and student['gpa'] > 85:
+        score = 0.9 + np.random.normal(0, 0.05)
     else:
         difficulty_weight = {'Easy': 0, 'Medium': -0.25, 'Hard': -0.5}
         major_affinity = {
@@ -79,12 +73,12 @@ def generate_grade(student, course):
         }
         motivation = student.get('motivation', 0.5)
         motivation_effect = (motivation - 0.5) * 0.15
-        gpa_norm = (student['gpa'] - 2.0) / 3.0
+        gpa_norm = (student['gpa'] - 40) / 60
         gpa_norm = max(0, min(1, gpa_norm))
         diff = difficulty_weight[course['difficulty_level']]
         affinity = major_affinity[student['major']].get(course['category'], 0)
         year_bonus = student['year_of_study'] * 0.02
-        noise = np.random.normal(0, 0.10)
+        noise = np.random.normal(0, 0.18)
         individual_diff = course.get('individual_difficulty', 0)
         if course['difficulty_level'] == 'Easy':
             score = 0.55 * gpa_norm + 0.15 + affinity + year_bonus + motivation_effect + noise + individual_diff
@@ -92,12 +86,12 @@ def generate_grade(student, course):
             score = 0.45 * gpa_norm + diff + affinity + year_bonus + motivation_effect + noise + individual_diff
         else:  # Hard
             score = 0.35 * gpa_norm + diff + affinity + year_bonus + motivation_effect + noise + individual_diff
-        if student['gpa'] < 2.5:
+        if student['gpa'] < 50:
             if course['difficulty_level'] == 'Hard':
                 score = min(score, 0.45)
             elif course['difficulty_level'] == 'Medium':
                 score = min(score, 0.6)
-        if student['gpa'] > 4.0:
+        if student['gpa'] > 85:
             if course['difficulty_level'] == 'Easy':
                 score = max(score, 0.8)
             elif course['difficulty_level'] == 'Medium':
@@ -105,14 +99,8 @@ def generate_grade(student, course):
             elif course['difficulty_level'] == 'Hard':
                 score = max(score, 0.6)
     score = max(0, min(1, score))
-    if score < 0.6:
-        return random.choice([2, 2.5, 3])
-    elif score < 0.75:
-        return random.choice([3, 3.5])
-    elif score < 0.9:
-        return random.choice([3.5, 4])
-    else:
-        return random.choice([4, 4.5, 5])
+    grade = int(np.clip(np.random.normal(score * 100, 10), 0, 100))
+    return grade
 
 
 # Генерация зачислений с осмысленными оценками
@@ -160,14 +148,21 @@ merged = merged.merge(courses, on='course_id', how='left')
 # Успешность теперь не бинарная, а с градациями
 def calculate_success(row):
     grade = row['grade']
-    # Жёсткое правило: слабый студент не может быть успешен на сложном курсе
-    if row['difficulty_level'] == 'Hard' and row['gpa'] < 2.7:
+    if row['difficulty_level'] == 'Hard' and row['gpa'] < 55:
         return 0
-    # Сильный студент на лёгком курсе — успех только если оценка высокая
-    if row['difficulty_level'] == 'Easy' and row['gpa'] > 4.0:
-        return 1 if grade >= 4 else 0
-    # Для остальных успех только если grade >= 3.5
-    return 1 if grade >= 3.5 else 0
+    if row['difficulty_level'] == 'Easy' and row['gpa'] > 85:
+        if grade >= 80:
+            return 1
+        elif grade >= 65:
+            return 0.5
+        else:
+            return 0
+    if grade >= 70:
+        return 1
+    elif grade >= 50:
+        return 0.5
+    else:
+        return 0
 
 
 merged['success'] = merged.apply(calculate_success, axis=1)

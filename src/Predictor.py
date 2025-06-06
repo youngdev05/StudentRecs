@@ -69,7 +69,7 @@ class CourseRecommender:
             # Показываем вероятность до калибровки
             print(f"[{student_data['major']} | {course['name']}] Prediction (before scale): {prob:.4f}")
 
-            final_score = min(0.95, max(0.3, prob * 0.9))
+            final_score = prob  # Используем "живую" вероятность без ограничений
 
             recommendations.append({
                 'course': course['name'],
