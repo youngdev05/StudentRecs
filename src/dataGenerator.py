@@ -78,14 +78,16 @@ def generate_grade(student, course):
         diff = difficulty_weight[course['difficulty_level']]
         affinity = major_affinity[student['major']].get(course['category'], 0)
         year_bonus = student['year_of_study'] * 0.02
-        noise = np.random.normal(0, 0.18)
-        individual_diff = course.get('individual_difficulty', 0)
         if course['difficulty_level'] == 'Easy':
-            score = 0.55 * gpa_norm + 0.15 + affinity + year_bonus + motivation_effect + noise + individual_diff
+            noise = np.random.normal(0, 0.25)
+            base_bonus = 0.25 if student['gpa'] < 60 else 0.15
+            score = 0.55 * gpa_norm + base_bonus + affinity + year_bonus + motivation_effect + noise + course.get('individual_difficulty', 0)
         elif course['difficulty_level'] == 'Medium':
-            score = 0.45 * gpa_norm + diff + affinity + year_bonus + motivation_effect + noise + individual_diff
+            noise = np.random.normal(0, 0.18)
+            score = 0.45 * gpa_norm + diff + affinity + year_bonus + motivation_effect + noise + course.get('individual_difficulty', 0)
         else:  # Hard
-            score = 0.35 * gpa_norm + diff + affinity + year_bonus + motivation_effect + noise + individual_diff
+            noise = np.random.normal(0, 0.18)
+            score = 0.35 * gpa_norm + diff + affinity + year_bonus + motivation_effect + noise + course.get('individual_difficulty', 0)
         if student['gpa'] < 50:
             if course['difficulty_level'] == 'Hard':
                 score = min(score, 0.45)
@@ -148,21 +150,29 @@ merged = merged.merge(courses, on='course_id', how='left')
 # Успешность теперь не бинарная, а с градациями
 def calculate_success(row):
     grade = row['grade']
-    if row['difficulty_level'] == 'Hard' and row['gpa'] < 55:
-        return 0
-    if row['difficulty_level'] == 'Easy' and row['gpa'] > 85:
-        if grade >= 80:
+    if row['difficulty_level'] == 'Easy':
+        if grade >= 60:
             return 1
-        elif grade >= 65:
+        elif grade >= 45:
             return 0.5
         else:
             return 0
-    if grade >= 70:
-        return 1
-    elif grade >= 50:
-        return 0.5
-    else:
-        return 0
+    if row['difficulty_level'] == 'Medium':
+        if grade >= 65:
+            return 1
+        elif grade >= 50:
+            return 0.5
+        else:
+            return 0
+    if row['difficulty_level'] == 'Hard':
+        if row['gpa'] < 55:
+            return 0
+        if grade >= 70:
+            return 1
+        elif grade >= 55:
+            return 0.5
+        else:
+            return 0
 
 
 merged['success'] = merged.apply(calculate_success, axis=1)

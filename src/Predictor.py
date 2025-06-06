@@ -106,7 +106,7 @@ if __name__ == '__main__':
                 'major_Physics': 0
             },
             {
-                'gpa': 95,  # 100-балльная система
+                'gpa': 80,  # 100-балльная система
                 'year_of_study': 4,
                 'major_CS': 1,
                 'major_Math': 0,
