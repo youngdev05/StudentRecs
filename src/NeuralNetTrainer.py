@@ -31,8 +31,7 @@ class Net(nn.Module):
         return torch.sigmoid(self.out(x))
 
 def train():
-    # ВНИМАНИЕ: gpa и grade теперь в 100-балльной системе (gpa: 40-100, grade: 0-100)
-    # Все пороги успеха и генерация данных должны соответствовать этой шкале
+    # ВНИМАНИЕ: теперь используются новые признаки и только технические курсы
     import torch
     import torch.nn as nn
     import torch.optim as optim
@@ -45,15 +44,20 @@ def train():
     # Загрузка обучающего датасета
     df = pd.read_csv('C:/Users/dimas/CsvGenerator/data/training_data.csv')
 
-    # One-hot для категориальных
-    df = pd.get_dummies(df, columns=['major', 'course_category', 'course_difficulty'])
+    # One-hot для новых категориальных признаков
+    df = pd.get_dummies(df, columns=[
+        'student_profile', 'favorite_profile', 'unfavorite_profile',
+        'course_profile', 'course_difficulty'
+    ])
 
-    # Балансировка классов
+    # Балансировка классов (по успеху 0 и 1)
     class_0 = df[df['success'] == 0]
     class_1 = df[df['success'] == 1]
     min_len = min(len(class_0), len(class_1))
-    df = pd.concat([class_0.sample(min_len, random_state=42),
-                    class_1.sample(min_len, random_state=42)])
+    df = pd.concat([
+        class_0.sample(min_len, random_state=42),
+        class_1.sample(min_len, random_state=42)
+    ])
 
     # Отделяем признаки и целевую переменную
     feature_names = [col for col in df.columns if col not in ['student_id', 'course_id', 'success']]

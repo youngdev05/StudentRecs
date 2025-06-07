@@ -34,31 +34,34 @@ class CourseRecommender:
         if not all([self.model, self.scaler, self.feature_names]):
             raise RuntimeError("Модель не загружена")
 
-        print("\n--- DEBUG: FEATURE NAMES ---")
-        print(self.feature_names)
-
         base_input = pd.DataFrame([np.zeros(len(self.feature_names))], columns=self.feature_names)
 
+        # Заполняем признаки студента (числовые и one-hot)
         for key, value in student_data.items():
             if key in base_input.columns:
                 base_input.at[0, key] = value
+        # one-hot для student_profile, favorite_profile, unfavorite_profile
+        for prefix in ["student_profile_", "favorite_profile_", "unfavorite_profile_"]:
+            for col in base_input.columns:
+                if col.startswith(prefix):
+                    base_input.at[0, col] = 1 if col == f"{prefix}{student_data[prefix[:-1]]}" else 0
 
         recommendations = []
         for _, course in courses_df.iterrows():
             input_data = base_input.copy()
-
-            cat_col = f'course_category_{course["category"]}'
-            diff_col = f'course_difficulty_{course["difficulty_level"]}'
-            if cat_col in input_data.columns:
-                input_data.at[0, cat_col] = 1
-            if diff_col in input_data.columns:
-                input_data.at[0, diff_col] = 1
-            if 'credits' in input_data.columns:
-                input_data.at[0, 'credits'] = course['credits']
-
-            # Показываем входные данные до нормализации
-            print(f"\n[{student_data['major']} | {course['name']}] RAW INPUT:")
-            print(input_data)
+            # one-hot для course_profile, course_difficulty
+            for prefix, value in [("course_profile_", course["course_profile"]), ("course_difficulty_", course["course_difficulty"])]:
+                for col in input_data.columns:
+                    if col.startswith(prefix):
+                        input_data.at[0, col] = 1 if col == f"{prefix}{value}" else 0
+            # credits
+            if 'course_credits' in input_data.columns:
+                input_data.at[0, 'course_credits'] = course['course_credits']
+            # is_favorite/is_unfavorite
+            if 'is_favorite' in input_data.columns:
+                input_data.at[0, 'is_favorite'] = int(course['course_profile'] == student_data['favorite_profile'])
+            if 'is_unfavorite' in input_data.columns:
+                input_data.at[0, 'is_unfavorite'] = int(course['course_profile'] == student_data['unfavorite_profile'])
 
             input_scaled = self.scaler.transform(input_data)
             input_tensor = torch.tensor(input_scaled, dtype=torch.float32)
@@ -66,16 +69,11 @@ class CourseRecommender:
             with torch.no_grad():
                 prob = self.model(input_tensor).item()
 
-            # Показываем вероятность до калибровки
-            print(f"[{student_data['major']} | {course['name']}] Prediction (before scale): {prob:.4f}")
-
-            final_score = prob  # Используем "живую" вероятность без ограничений
-
             recommendations.append({
                 'course': course['name'],
-                'category': course['category'],
-                'difficulty': course['difficulty_level'],
-                'score': final_score
+                'profile': course['course_profile'],
+                'difficulty': course['course_difficulty'],
+                'score': prob
             })
 
         recommendations.sort(key=lambda x: x['score'], reverse=True)
@@ -83,9 +81,9 @@ class CourseRecommender:
 
     def print_recommendations(self, student: dict, recommendations: list):
         print(
-            f"\nРекомендации для {student['major']} студента (GPA: {student['gpa']}, год: {student['year_of_study']}):")
+            f"\nРекомендации для {student['student_profile']} студента (GPA: {student['gpa']}, год: {student['year_of_study']}):")
         for i, course in enumerate(recommendations, 1):
-            print(f"{i}. {course['course']} ({course['category']})")
+            print(f"{i}. {course['course']} (Профиль: {course['profile']})")
             print(f"   Сложность: {course['difficulty']}")
             print(f"   Оценка: {course['score']:.2f}")
             print("-" * 40)
@@ -98,28 +96,36 @@ if __name__ == '__main__':
 
         test_students = [
             {
-                'gpa': 50,  # 100-балльная система
+                'gpa': 75,
                 'year_of_study': 3,
-                'major_Math': 1,
-                'major_CS': 0,
-                'major_History': 0,
-                'major_Physics': 0
+                'motivation': 0.7,
+                'student_profile': 'программист',
+                'favorite_profile': 'программирование',
+                'unfavorite_profile': 'математика'
             },
             {
-                'gpa': 80,  # 100-балльная система
+                'gpa': 60,
+                'year_of_study': 2,
+                'motivation': 0.5,
+                'student_profile': 'аналитик',
+                'favorite_profile': 'математика',
+                'unfavorite_profile': 'AI'
+            },
+            {
+                'gpa': 85,
                 'year_of_study': 4,
-                'major_CS': 1,
-                'major_Math': 0,
-                'major_History': 0,
-                'major_Physics': 0
+                'motivation': 0.9,
+                'student_profile': 'сетевик',
+                'favorite_profile': 'сети',
+                'unfavorite_profile': 'железо'
             }
         ]
 
         for student in test_students:
-            major = next(k.split('_')[1] for k, v in student.items() if k.startswith('major_') and v == 1)
-            student['major'] = major
             recommendations = recommender.recommend_courses(student, courses_df)
             recommender.print_recommendations(student, recommendations)
 
     except Exception as e:
         logger.error(f"Ошибка: {e}")
+        import traceback
+        traceback.print_exc()
