@@ -3,7 +3,7 @@ import pandas as pd
 import logging
 import numpy as np
 from sklearn.preprocessing import StandardScaler
-from src.NeuralNetTrainer import Net
+from NeuralNetTrainer import Net
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
