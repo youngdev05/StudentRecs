@@ -24,30 +24,31 @@ courses_df = load_courses()
 st.title("🎓 Рекомендательная система курсов")
 st.write("Введите свои данные, чтобы получить рекомендации по курсам и вероятность успеха!")
 
-majors = ["CS", "Math", "History", "Physics"]
-major = st.selectbox("Ваш профиль (major)", majors)
+student_profiles = ["программист", "аналитик", "сетевик", "data scientist", "системщик"]
+course_profiles = ["программирование", "математика", "сети", "AI", "системы", "железо"]
+
+student_profile = st.selectbox("Ваш профиль (специализация)", student_profiles)
 gpa = st.slider("Ваш GPA (от 40 до 100)", 40, 100, 70)
 motivation = st.slider("Мотивация (от 0 до 1)", 0.0, 1.0, 0.5, step=0.01)
 year_of_study = st.selectbox("Курс обучения", [1, 2, 3, 4])
+favorite_profile = st.selectbox("Любимый профиль курсов", course_profiles)
+unfavorite_profile = st.selectbox("Нелюбимый профиль курсов", [p for p in course_profiles if p != favorite_profile])
 
-# Формируем one-hot major
 student_data = {
     "gpa": gpa,
     "year_of_study": year_of_study,
     "motivation": motivation,
-    f"major_{major}": 1,
+    "student_profile": student_profile,
+    "favorite_profile": favorite_profile,
+    "unfavorite_profile": unfavorite_profile
 }
-for m in majors:
-    if m != major:
-        student_data[f"major_{m}"] = 0
-student_data["major"] = major  # для отладки и совместимости
 
 if st.button("Показать рекомендации!"):
     recommendations = recommender.recommend_courses(student_data, courses_df, top_n=5)
     st.subheader("Топ-5 курсов для вас:")
     for i, rec in enumerate(recommendations, 1):
         st.markdown(f"**{i}. {rec['course']}**  ")
-        st.write(f"Категория: {rec['category']}, Сложность: {rec['difficulty']}, Вероятность успеха: {rec['score']:.1%}")
+        st.write(f"Профиль: {rec['profile']}, Сложность: {rec['difficulty']}, Вероятность успеха: {rec['score']:.1%}")
     # Визуализация вероятностей по всем курсам
     st.subheader("Ваши шансы на всех курсах:")
     all_recs = recommender.recommend_courses(student_data, courses_df, top_n=len(courses_df))
